@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+
+{% block title %}История записей{% endblock %}
+
+{% block content %}
+<h2>📋 История записей</h2>
+
+{% if bookings %}
+<table class="table table-striped">
+    <thead>
+        <tr><th>#</th><th>Услуга</th><th>Автомобиль</th><th>Дата</th><th>Время</th><th>Цена</th><th>Скидка</th><th>Статус</th><th></th></tr>
+    </thead>
+    <tbody>
+        {% for b in bookings %}
+        <tr>
+            <td>{{ b.id }}</td>
+            <td>{{ b.service_name }}</td>
+            <td>{{ b.car|default:"—" }}</td>
+            <td>{{ b.booking_date }}</td>
+            <td>{{ b.booking_time }}</td>
+            <td>{{ b.final_price }} ₽</td>
+            <td>{% if b.discount_applied > 0 %}{{ b.discount_applied }}%{% else %}—{% endif %}</td>
+            <td><span class="badge {% if b.status == 'completed' %}bg-success{% elif b.status == 'cancelled' %}bg-danger{% elif b.status == 'confirmed' %}bg-primary{% else %}bg-warning{% endif %}">{{ b.get_status_display }}</span></td>
+            <td>
+                <a href="{% url 'booking_detail' b.id %}" class="btn btn-sm btn-outline-primary">Детали</a>
+                {% if b.status == 'pending' or b.status == 'confirmed' %}
+                <a href="{% url 'cancel_booking' b.id %}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Отменить запись?')">Отменить</a>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="text-muted">У вас пока нет записей. <a href="{% url 'create_booking' %}">Записаться</a></p>
+{% endif %}
+{% endblock %}

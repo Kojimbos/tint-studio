@@ -1,0 +1,252 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Запись на услугу{% endblock %}
+
+{% block content %}
+<h2>📝 Новая запись</h2>
+
+{% if not user.cars.exists %}
+<div class="alert alert-warning">
+    У вас нет добавленных автомобилей.
+    <a href="{% url 'profile' %}" class="alert-link">Добавьте автомобиль</a> перед записью.
+</div>
+{% else %}
+<form method="post" id="booking-form" novalidate>
+    {% csrf_token %}
+
+    <div class="mb-3">
+        <label class="form-label fw-bold">Тип услуги</label>
+        <div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="service_type" value="tint" id="id_service_type_tint" checked>
+                <label class="form-check-label" for="id_service_type_tint">Тонировка</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="service_type" value="armor" id="id_service_type_armor">
+                <label class="form-check-label" for="id_service_type_armor">Бронирование</label>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label for="{{ form.car.id_for_label }}" class="form-label fw-bold">Автомобиль</label>
+        {{ form.car }}
+    </div>
+
+    <div id="tint-fields">
+        <div class="mb-3">
+            <label class="form-label fw-bold">Плёнка</label>
+            <select class="form-control" id="film-select"><option value="">Выберите плёнку</option></select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label fw-bold">Процент светопропускаемости</label>
+            <select class="form-control" id="percent-select" name="tint_film_percent"><option value="">Сначала выберите плёнку</option></select>
+        </div>
+        <div class="form-check mb-3">
+            {{ form.remove_old_tint }}
+            <label class="form-check-label" for="{{ form.remove_old_tint.id_for_label }}">Снять старую тонировку</label>
+        </div>
+    </div>
+
+    <div id="armor-fields" style="display:none;">
+        <div class="mb-3">
+            <label class="form-label fw-bold">Пакет бронирования</label>
+            <div id="armor-packages-list">
+                {% for radio in form.armor_package %}
+                <div class="form-check">
+                    {{ radio.tag }}
+                    <label class="form-check-label" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label for="{{ form.booking_date.id_for_label }}" class="form-label fw-bold">Дата</label>
+            {{ form.booking_date }}
+        </div>
+        <div class="col-md-6">
+            <label class="form-label fw-bold">Время</label>
+            <div id="time-slots" class="d-flex flex-wrap gap-2"><span class="text-muted">Сначала выберите дату</span></div>
+            <input type="hidden" name="booking_time" id="selected-time">
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5>💰 Стоимость</h5>
+            <div id="price-display"><span class="text-muted">Заполните параметры для расчёта</span></div>
+            <input type="hidden" name="base_price" id="base-price" value="0">
+            <input type="hidden" name="final_price" id="final-price" value="0">
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-lg" id="submit-btn" disabled>Подтвердить запись</button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const FILMS_DATA = {{ films_json|safe }};
+const PACKAGES_DATA = {{ packages_json|safe }};
+const CARS_DATA = {{ cars_json|safe }};
+const USER_DISCOUNT = {{ user_discount }};
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadFilms();
+    setupEventListeners();
+    initServiceType();
+    const dateInput = document.getElementById('booking-date');
+    if (dateInput) dateInput.addEventListener('change', loadTimeSlots);
+});
+
+function loadFilms() {
+    const filmSelect = document.getElementById('film-select');
+    if (!filmSelect) return;
+    filmSelect.innerHTML = '<option value="">Выберите плёнку</option>';
+    FILMS_DATA.forEach(film => {
+        const option = document.createElement('option');
+        option.value = film.id;
+        option.textContent = film.name;
+        filmSelect.appendChild(option);
+    });
+}
+
+function setupEventListeners() {
+    const filmSelect = document.getElementById('film-select');
+    if (filmSelect) filmSelect.addEventListener('change', () => { loadPercents(filmSelect.value); recalculatePrice(); });
+    const percentSelect = document.getElementById('percent-select');
+    if (percentSelect) percentSelect.addEventListener('change', recalculatePrice);
+    document.querySelectorAll('input[name="service_type"]').forEach(radio => {
+        radio.addEventListener('change', () => { toggleServiceFields(); recalculatePrice(); });
+    });
+    const removalCheck = document.getElementById('id_remove_old_tint');
+    if (removalCheck) removalCheck.addEventListener('change', recalculatePrice);
+    const carSelect = document.querySelector('select[name="car"]');
+    if (carSelect) carSelect.addEventListener('change', recalculatePrice);
+    document.querySelectorAll('input[name="armor_package"]').forEach(radio => {
+        radio.addEventListener('change', recalculatePrice);
+    });
+}
+
+function initServiceType() {
+    const checked = document.querySelector('input[name="service_type"]:checked');
+    if (checked) toggleServiceFields();
+}
+
+function toggleServiceFields() {
+    const serviceType = document.querySelector('input[name="service_type"]:checked');
+    const tintFields = document.getElementById('tint-fields');
+    const armorFields = document.getElementById('armor-fields');
+    if (serviceType && serviceType.value === 'tint') {
+        tintFields.style.display = 'block';
+        armorFields.style.display = 'none';
+    } else if (serviceType) {
+        tintFields.style.display = 'none';
+        armorFields.style.display = 'block';
+    }
+}
+
+function loadPercents(filmId) {
+    const percentSelect = document.getElementById('percent-select');
+    if (!percentSelect) return;
+    percentSelect.innerHTML = '<option value="">Выберите процент</option>';
+    if (!filmId) return;
+    const film = FILMS_DATA.find(f => f.id == filmId);
+    if (film && film.percents) {
+        film.percents.forEach(p => {
+            const option = document.createElement('option');
+            option.value = p.id;
+            option.textContent = p.percent + '%';
+            percentSelect.appendChild(option);
+        });
+    }
+}
+
+function recalculatePrice() {
+    const serviceType = document.querySelector('input[name="service_type"]:checked');
+    if (!serviceType) return;
+    const carSelect = document.querySelector('select[name="car"]');
+    const carId = carSelect ? carSelect.value : null;
+    if (!carId) {
+        document.getElementById('price-display').innerHTML = '<span class="text-muted">Выберите автомобиль</span>';
+        return;
+    }
+    const car = CARS_DATA.find(c => c.id == carId);
+    if (!car) return;
+    const priceDisplay = document.getElementById('price-display');
+    const submitBtn = document.getElementById('submit-btn');
+    const basePriceInput = document.getElementById('base-price');
+    const finalPriceInput = document.getElementById('final-price');
+
+    if (serviceType.value === 'tint') {
+        const filmPercentId = document.getElementById('percent-select')?.value;
+        const removal = document.getElementById('id_remove_old_tint')?.checked || false;
+        if (!filmPercentId || !car.car_class_id || !car.body_type_id) {
+            priceDisplay.innerHTML = '<span class="text-muted">Заполните все параметры</span>';
+            submitBtn.disabled = true;
+            return;
+        }
+        const params = new URLSearchParams({car_class_id: car.car_class_id, body_type_id: car.body_type_id, film_percent_id: filmPercentId, removal: removal});
+        fetch('/services/api/calc-tint/?' + params)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) { priceDisplay.innerHTML = `<span class="text-danger">${data.error}</span>`; return; }
+                let basePrice = data.total;
+                let finalPrice = basePrice;
+                if (USER_DISCOUNT > 0) finalPrice = basePrice * (1 - USER_DISCOUNT / 100);
+                priceDisplay.innerHTML = `
+                    <p>Базовая цена: <strong>${basePrice.toFixed(0)} ₽</strong></p>
+                    ${data.removal_price > 0 ? `<p>Снятие старой: <strong>${data.removal_price.toFixed(0)} ₽</strong></p>` : ''}
+                    ${USER_DISCOUNT > 0 ? `<p>Ваша скидка: <span class="badge bg-success">${USER_DISCOUNT}%</span></p>` : ''}
+                    <p class="fs-5">Итого: <strong>${finalPrice.toFixed(0)} ₽</strong></p>`;
+                basePriceInput.value = basePrice.toFixed(0);
+                finalPriceInput.value = finalPrice.toFixed(0);
+                submitBtn.disabled = false;
+            })
+            .catch(err => { priceDisplay.innerHTML = '<span class="text-danger">Ошибка расчёта</span>'; console.error(err); });
+    } else if (serviceType.value === 'armor') {
+        const packageRadio = document.querySelector('input[name="armor_package"]:checked');
+        if (!packageRadio || !car.car_class_id) {
+            priceDisplay.innerHTML = '<span class="text-muted">Выберите пакет бронирования</span>';
+            submitBtn.disabled = true;
+            return;
+        }
+        const params = new URLSearchParams({car_class_id: car.car_class_id, package_id: packageRadio.value});
+        fetch('/services/api/calc-armor/?' + params)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) { priceDisplay.innerHTML = `<span class="text-danger">${data.error}</span>`; return; }
+                let basePrice = data.total;
+                let finalPrice = basePrice;
+                if (USER_DISCOUNT > 0) finalPrice = basePrice * (1 - USER_DISCOUNT / 100);
+                priceDisplay.innerHTML = `
+                    <p>Базовая цена пакета: <strong>${data.base_price.toFixed(0)} ₽</strong></p>
+                    <p>Коэффициент класса: <strong>×${data.coefficient}</strong></p>
+                    ${USER_DISCOUNT > 0 ? `<p>Ваша скидка: <span class="badge bg-success">${USER_DISCOUNT}%</span></p>` : ''}
+                    <p class="fs-5">Итого: <strong>${finalPrice.toFixed(0)} ₽</strong></p>`;
+                basePriceInput.value = basePrice.toFixed(0);
+                finalPriceInput.value = finalPrice.toFixed(0);
+                submitBtn.disabled = false;
+            })
+            .catch(err => { priceDisplay.innerHTML = '<span class="text-danger">Ошибка расчёта</span>'; console.error(err); });
+    }
+}
+
+function loadTimeSlots() {
+    const dateInput = document.getElementById('booking-date');
+    const timeSlotsDiv = document.getElementById('time-slots');
+    const selectedTimeInput = document.getElementById('selected-time');
+    if (!dateInput || !dateInput.value) {
+        timeSlotsDiv.innerHTML = '<span class="text-muted">Сначала выберите дату</span>';
+        return;
+    }
+    timeSlotsDiv.innerHTML = '<span class="text-muted">Загрузка...</span>';
+    fetch(`/bookings/api/available-slots/?date=${dateInput.value}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { time

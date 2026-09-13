@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+
+{% block title %}Услуги и цены{% endblock %}
+
+{% block content %}
+<h2>💼 Услуги и цены</h2>
+
+<ul class="nav nav-tabs mb-4" id="servicesTab" role="tablist">
+    <li class="nav-item" role="presentation"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tint" type="button">🎯 Тонировка</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#armor" type="button">🛡️ Бронирование</button></li>
+</ul>
+
+<div class="tab-content">
+    <div class="tab-pane fade show active" id="tint">
+        <h4>Плёнки для тонировки</h4>
+        <div class="row">
+            {% for film in films %}
+            <div class="col-md-4 mb-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ film.name }}</h5>
+                        <p class="card-text text-muted">{{ film.country }}</p>
+                        <p><strong>Доступные проценты:</strong></p>
+                        <div>{% for p in film.percents.all %}<span class="badge bg-secondary me-1">{{ p.percent }}%</span>{% endfor %}</div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        <p class="mt-3"><strong>Дополнительно:</strong> снятие старой тонировки — цена зависит от класса и кузова.</p>
+    </div>
+    <div class="tab-pane fade" id="armor">
+        <h4>Пакеты бронирования</h4>
+        <div class="row">
+            {% for pkg in packages %}
+            <div class="col-md-6 mb-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">{{ pkg.name }}</h5>
+                        <p class="card-text">{{ pkg.description }}</p>
+                        <p><strong>Базовая цена (класс A, седан):</strong> {{ pkg.base_price }} ₽</p>
+                        <p class="small text-muted">Коэффициенты: {% for c in pkg.coefficients.all %}Класс {{ c.car_class.code }}: ×{{ c.coefficient }}; {% endfor %}</p>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="text-center mt-4">
+    {% if user.is_authenticated %}
+    <a href="{% url 'create_booking' %}" class="btn btn-primary btn-lg">Записаться сейчас</a>
+    {% else %}
+    <a href="{% url 'login' %}" class="btn btn-primary btn-lg">Войти и записаться</a>
+    {% endif %}
+</div>
+{% endblock %}

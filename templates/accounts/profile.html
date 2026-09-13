@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+
+{% block title %}Личный кабинет{% endblock %}
+
+{% block content %}
+<h2>👤 Личный кабинет</h2>
+
+<div class="row mt-3">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">Мои данные</div>
+            <div class="card-body">
+                <p><strong>Имя:</strong> {{ user.first_name }} {{ user.last_name }}</p>
+                <p><strong>Email:</strong> {{ user.email|default:"—" }}</p>
+                <p><strong>Телефон:</strong> {{ user.phone|default:"—" }}</p>
+                {% if user.telegram_id %}<p><strong>Telegram:</strong> {{ user.telegram_id }}</p>{% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">💎 Моя скидка</div>
+            <div class="card-body">
+                <p><strong>Сумма заказов за год:</strong> {{ discount_info.total_spent|floatformat:0 }} ₽</p>
+                <p><strong>Текущая скидка:</strong>
+                    {% if discount_info.discount > 0 %}
+                    <span class="badge bg-success fs-5">{{ discount_info.discount }}%</span>
+                    {% else %}
+                    <span class="text-muted">Пока нет</span>
+                    {% endif %}
+                </p>
+                {% if discount_info.next_threshold %}
+                <p class="small text-muted">До скидки {{ discount_info.next_threshold.next_percent }}% осталось потратить {{ discount_info.next_threshold.need|floatformat:0 }} ₽</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        🚗 Мои автомобили
+        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addCarModal">+ Добавить</button>
+    </div>
+    <div class="card-body">
+        {% if cars %}
+        <table class="table">
+            <thead><tr><th>Модель</th><th>Класс</th><th>Кузов</th><th>Год</th><th>Госномер</th><th></th></tr></thead>
+            <tbody>
+                {% for car in cars %}
+                <tr>
+                    <td>{{ car.car_model }}</td>
+                    <td>{{ car.car_model.car_class.code }}</td>
+                    <td>{{ car.car_model.body_type.name }}</td>
+                    <td>{{ car.year|default:"—" }}</td>
+                    <td>{{ car.license_plate|default:"—" }}</td>
+                    <td><a href="{% url 'delete_car' car.id %}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить автомобиль?')">Удалить</a></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted">У вас пока нет добавленных автомобилей.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">📋 Последние записи</div>
+    <div class="card-body">
+        {% if bookings %}
+        <table class="table">
+            <thead><tr><th>ID</th><th>Услуга</th><th>Дата</th><th>Время</th><th>Цена</th><th>Статус</th></tr></thead>
+            <tbody>
+                {% for b in bookings %}
+                <tr>
+                    <td><a href="{% url 'booking_detail' b.id %}">#{{ b.id }}</a></td>
+                    <td>{{ b.service_name }}</td>
+                    <td>{{ b.booking_date }}</td>
+                    <td>{{ b.booking_time }}</td>
+                    <td>{{ b.final_price }} ₽</td>
+                    <td>{{ b.get_status_display }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <a href="{% url 'booking_history' %}" class="btn btn-outline-primary btn-sm">Вся история</a>
+        {% else %}
+        <p class="text-muted">У вас пока нет записей.</p>
+        <a href="{% url 'create_booking' %}" class="btn btn-primary">Записаться</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="modal fade" id="addCarModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Добавить автомобиль</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'add_car' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    {% for field in car_form %}
+                    <div class="mb-3">
+                        <label class="form-label">{{ field.label }}</label>
+                        {{ field }}
+                    </div>
+                    {% endfor %}
+                    <div class="alert alert-info small mb-0">
+                        ⚠️ Если в списке нет марки или модели вашего автомобиля,
+                        свяжитесь с администратором по телефону <strong>+7 (999) 214-80-39</strong> для добавления в справочник.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-primary">Добавить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
