@@ -2,6 +2,8 @@ import requests
 from django.core.mail import send_mail
 from django.conf import settings
 
+STUDIO_PHONE = '+7 (992) 148-03-93'
+
 def send_telegram_notification(chat_id, message):
     """Отправляет сообщение в Telegram через бота."""
     token = settings.TELEGRAM_BOT_TOKEN
@@ -43,10 +45,19 @@ def notify_client_about_booking(booking):
         f'Дата: {booking.booking_date}\n'
         f'Время: {booking.booking_time}\n'
         f'Цена: {booking.final_price} ₽\n'
-        f'Статус: {booking.get_status_display()}\n\n'
-        f'Студия тонировки и бронирования\n'
-        f'Телефон: +7 (999) 214-80-39'
+        f'Статус: {booking.get_status_display()}\n'
     )
+    if booking.remove_old_tint:
+        msg += (
+            f'\n⚠️ Вы выбрали снятие старой плёнки.\n'
+            f'Цена и гарантия обсуждаются индивидуально — '
+            f'мы свяжемся с вами или уточним при встрече.\n'
+        )
+    msg += (
+        f'\nСтудия тонировки и бронирования\n'
+        f'Телефон: {STUDIO_PHONE}'
+    )
+
     if client.email and client.agree_notifications_email:
         send_email_notification(
             to_email=client.email,
@@ -67,6 +78,9 @@ def notify_admin_about_booking(booking):
         f'Цена: {booking.final_price} ₽\n'
         f'Статус: {booking.get_status_display()}'
     )
+    if booking.remove_old_tint:
+        admin_msg += '\n\n⚠️ ТРЕБУЕТСЯ СНЯТИЕ СТАРОЙ ПЛЁНКИ — уточнить цену с клиентом!'
+
     admin_email = getattr(settings, 'ADMIN_EMAIL', None)
     if admin_email:
         send_email_notification(
@@ -77,3 +91,4 @@ def notify_admin_about_booking(booking):
     admin_chat_id = settings.TELEGRAM_CHAT_ID
     if admin_chat_id:
         send_telegram_notification(chat_id=admin_chat_id, message=admin_msg)
+

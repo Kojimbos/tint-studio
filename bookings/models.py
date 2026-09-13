@@ -19,12 +19,29 @@ class Booking(models.Model):
     car = models.ForeignKey('accounts.UserCar', on_delete=models.SET_NULL, null=True,
                             related_name='bookings', verbose_name='Автомобиль')
     service_type = models.CharField('Тип услуги', max_length=10, choices=SERVICE_TYPES)
+
+    tint_service = models.ForeignKey(
+        'services.TintService', on_delete=models.SET_NULL,
+        null=True, blank=True, verbose_name='Услуга тонировки',
+        related_name='bookings'
+    )
+    tint_film_percent = models.ForeignKey(
+        'services.FilmTintPercent', on_delete=models.SET_NULL,
+        null=True, blank=True, verbose_name='Плёнка и процент',
+        related_name='bookings'
+    )
+    remove_old_tint = models.BooleanField(
+        'Снять старую плёнку', default=False,
+        help_text='Цена и гарантия обсуждаются индивидуально'
+    )
+
+    armor_package = models.ForeignKey(
+        'services.ArmorPackage', on_delete=models.SET_NULL,
+        null=True, blank=True, verbose_name='Пакет бронирования',
+        related_name='bookings'
+    )
+
     status = models.CharField('Статус', max_length=20, choices=STATUS_CHOICES, default='pending')
-    tint_film_percent = models.ForeignKey('services.FilmTintPercent', on_delete=models.SET_NULL,
-                                          null=True, blank=True, verbose_name='Плёнка и процент')
-    remove_old_tint = models.BooleanField('Снять старую тонировку', default=False)
-    armor_package = models.ForeignKey('services.ArmorPackage', on_delete=models.SET_NULL,
-                                      null=True, blank=True, verbose_name='Пакет бронирования')
     booking_date = models.DateField('Дата')
     booking_time = models.TimeField('Время')
     base_price = models.DecimalField('Базовая цена', max_digits=10, decimal_places=2, default=0)
@@ -47,11 +64,18 @@ class Booking(models.Model):
 
     def __str__(self):
         service = 'Тонировка' if self.service_type == 'tint' else 'Бронирование'
-        return f'#{self.id} — {self.client} — {service} — {self.booking_date} {self.booking_time}'
+        extra = ' + снятие старой' if self.remove_old_tint else ''
+        return f'#{self.id} — {self.client} — {service}{extra} — {self.booking_date} {self.booking_time}'
 
     @property
     def service_name(self):
-        return 'Тонировка' if self.service_type == 'tint' else 'Бронирование'
+        if self.service_type == 'tint':
+            base = f'Тонировка: {self.tint_service.name}' if self.tint_service else 'Тонировка'
+        else:
+            base = f'Бронирование: {self.armor_package.name}' if self.armor_package else 'Бронирование'
+        if self.remove_old_tint:
+            base += ' + снятие старой плёнки'
+        return base
 
     def save(self, *args, **kwargs):
         is_new = self.pk is None
@@ -70,3 +94,4 @@ class Booking(models.Model):
         elif old_status and old_status != self.status and not self._notifications_sent:
             self._notifications_sent = True
             notify_client_about_booking(self)
+

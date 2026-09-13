@@ -45,13 +45,14 @@
     <div class="card-body">
         {% if cars %}
         <table class="table">
-            <thead><tr><th>Модель</th><th>Класс</th><th>Кузов</th><th>Год</th><th>Госномер</th><th></th></tr></thead>
+            <thead><tr><th>Модель</th><th>Кузов</th><th>Коэф. тонировки</th><th>Коэф. брони</th><th>Год</th><th>Госномер</th><th></th></tr></thead>
             <tbody>
                 {% for car in cars %}
                 <tr>
                     <td>{{ car.car_model }}</td>
-                    <td>{{ car.car_model.car_class.code }}</td>
-                    <td>{{ car.car_model.body_type.name }}</td>
+                    <td>{{ car.car_model.body_type.name|default:"—" }}</td>
+                    <td>{% if car.car_model.tint_coefficient %}×{{ car.car_model.tint_coefficient.coefficient }}{% else %}—{% endif %}</td>
+                    <td>{% if car.car_model.armor_coefficient %}×{{ car.car_model.armor_coefficient.coefficient }}{% else %}—{% endif %}</td>
                     <td>{{ car.year|default:"—" }}</td>
                     <td>{{ car.license_plate|default:"—" }}</td>
                     <td><a href="{% url 'delete_car' car.id %}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Удалить автомобиль?')">Удалить</a></td>
@@ -78,7 +79,7 @@
                     <td>{{ b.service_name }}</td>
                     <td>{{ b.booking_date }}</td>
                     <td>{{ b.booking_time }}</td>
-                    <td>{{ b.final_price }} ₽</td>
+                    <td>{{ b.final_price|floatformat:0 }} ₽</td>
                     <td>{{ b.get_status_display }}</td>
                 </tr>
                 {% endfor %}
@@ -106,6 +107,7 @@
                     <div class="mb-3">
                         <label class="form-label">{{ field.label }}</label>
                         {{ field }}
+                        {% if field.errors %}<div class="text-danger small">{{ field.errors|join:", " }}</div>{% endif %}
                     </div>
                     {% endfor %}
                     <div class="alert alert-info small mb-0">
@@ -122,3 +124,4 @@
     </div>
 </div>
 {% endblock %}
+

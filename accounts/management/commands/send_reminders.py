@@ -2,7 +2,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import timedelta
 from bookings.models import Booking
-from utils.notifications import send_email_notification, send_telegram_notification
+from utils.notifications import send_email_notification, send_telegram_notification, STUDIO_PHONE
 
 class Command(BaseCommand):
     help = 'Отправляет напоминания клиентам о записях на завтра'
@@ -12,7 +12,7 @@ class Command(BaseCommand):
         bookings = Booking.objects.filter(
             booking_date=tomorrow,
             status__in=['pending', 'confirmed']
-        ).select_related('client')
+        ).select_related('client', 'tint_service', 'armor_package')
 
         count = 0
         for booking in bookings:
@@ -22,10 +22,17 @@ class Command(BaseCommand):
                 f'У вас запись на {booking.booking_date} в {booking.booking_time}.\n'
                 f'Услуга: {booking.service_name}\n'
                 f'Цена: {booking.final_price} ₽\n'
-                f'Статус: {booking.get_status_display()}\n\n'
-                f'Студия тонировки и бронирования\n'
-                f'Телефон: +7 (999) 214-80-39'
+                f'Статус: {booking.get_status_display()}\n'
             )
+            if booking.remove_old_tint:
+                message += (
+                    f'\n⚠️ Напоминаем: снятие старой плёнки обсуждается индивидуально.\n'
+                )
+            message += (
+                f'\nСтудия тонировки и бронирования\n'
+                f'Телефон: {STUDIO_PHONE}'
+            )
+
             if client.email and client.agree_notifications_email:
                 send_email_notification(client.email, 'Напоминание о записи', message)
                 count += 1
@@ -34,3 +41,4 @@ class Command(BaseCommand):
                 count += 1
 
         self.stdout.write(self.style.SUCCESS(f'Отправлено напоминаний: {count}'))
+

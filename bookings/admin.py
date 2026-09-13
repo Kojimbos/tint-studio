@@ -4,15 +4,16 @@ from .models import Booking
 
 @admin.register(Booking)
 class BookingAdmin(admin.ModelAdmin):
-    list_display = ('id', 'client_link', 'service_type_display', 'car_info',
-                    'booking_date', 'booking_time', 'final_price', 'status_display')
+    list_display = ('id', 'client_link', 'service_type_display', 'service_detail',
+                    'car_info', 'booking_date', 'booking_time', 'final_price', 'status_display')
     list_filter = ('status', 'service_type', 'booking_date')
     search_fields = ('client__username', 'client__phone', 'client__email', 'car__license_plate')
     date_hierarchy = 'booking_date'
     readonly_fields = ('created_at', 'updated_at')
     fieldsets = (
         ('Клиент и автомобиль', {'fields': ('client', 'car')}),
-        ('Услуга', {'fields': ('service_type', 'tint_film_percent', 'remove_old_tint', 'armor_package')}),
+        ('Услуга', {'fields': ('service_type', 'tint_service', 'tint_film_percent',
+                                'remove_old_tint', 'armor_package')}),
         ('Дата и время', {'fields': ('booking_date', 'booking_time')}),
         ('Цена', {'fields': ('base_price', 'discount_applied', 'final_price')}),
         ('Статус', {'fields': ('status', 'admin_note')}),
@@ -26,7 +27,18 @@ class BookingAdmin(admin.ModelAdmin):
 
     def service_type_display(self, obj):
         return 'Тонировка' if obj.service_type == 'tint' else 'Бронирование'
-    service_type_display.short_description = 'Услуга'
+    service_type_display.short_description = 'Тип'
+
+    def service_detail(self, obj):
+        if obj.service_type == 'tint':
+            parts = []
+            if obj.tint_service:
+                parts.append(obj.tint_service.name)
+            if obj.tint_film_percent:
+                parts.append(f'{obj.tint_film_percent.film.name} {obj.tint_film_percent.percent}%')
+            return ' / '.join(parts) if parts else '—'
+        return obj.armor_package.name if obj.armor_package else '—'
+    service_detail.short_description = 'Детали услуги'
 
     def car_info(self, obj):
         return str(obj.car) if obj.car else '—'
@@ -54,3 +66,4 @@ class BookingAdmin(admin.ModelAdmin):
     def mark_cancelled(self, request, queryset):
         updated = queryset.exclude(status__in=['completed', 'cancelled']).update(status='cancelled')
         self.message_user(request, f'Отменено записей: {updated}')
+

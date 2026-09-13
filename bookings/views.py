@@ -4,6 +4,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse
+from django.utils import timezone
 from .models import Booking
 from .forms import BookingForm
 from services.models import TintService, ArmorPackage, ArmorElement, FilmTintPercent, TintFilm
@@ -22,11 +23,23 @@ def create_booking(request):
             else:
                 booking.final_price = booking.base_price
             booking.save()
+
+            # Если выбрано снятие старой плёнки — предупреждаем клиента в сообщении
+            if booking.remove_old_tint:
+                messages.warning(request,
+                    f'⚠️ Заявка на снятие старой плёнки принята. '
+                    f'Цена и гарантия будут уточнены по телефону +7 (992) 148-03-93 или при встрече.'
+                )
+
             messages.success(request,
                 f'Запись создана! Дата: {booking.booking_date}, время: {booking.booking_time}. '
-                f'Итого: {booking.final_price} ₽'
+                f'Предварительная стоимость: {booking.final_price:.0f} ₽'
             )
-            return redirect('booking_detail', booking_id=booking.id)
+            return redirect('booking_history')
+        else:
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, f'{field}: {error}')
     else:
         form = BookingForm(user=request.user)
 
@@ -37,33 +50,43 @@ def create_booking(request):
             'id': film.id,
             'name': film.name,
             'film_type': film.film_type,
+            'coefficient': float(film.coefficient),
             'percents': [{'id': p.id, 'percent': p.percent} for p in film.percents.all()]
         })
 
     tint_services = TintService.objects.filter(is_active=True)
-    tint_services_json = [{'id': s.id, 'name': s.name, 'base_price': float(s.base_price)} for s in tint_services]
+    tint_services_json = [
+        {'id': s.id, 'name': s.name, 'base_price': float(s.base_price)}
+        for s in tint_services
+    ]
 
     packages = ArmorPackage.objects.all()
-    packages_json = [{'id': p.id, 'name': p.name, 'package_type': p.package_type, 'base_price': float(p.base_price)} for p in packages]
-
-    elements = ArmorElement.objects.filter(is_active=True)
-    elements_json = [{'id': e.id, 'name': e.name, 'base_price': float(e.base_price)} for e in elements]
+    packages_json = [
+        {'id': p.id, 'name': p.name, 'package_type': p.package_type, 'base_price': float(p.base_price)}
+        for p in packages
+    ]
 
     cars_data = []
-    for car in request.user.cars.filter(is_active=True):
+    for car in request.user.cars.filter(is_active=True).select_related(
+            'car_model', 'car_model__body_type',
+            'car_model__tint_coefficient', 'car_model__armor_coefficient'):
+        cm = car.car_model
         cars_data.append({
             'id': car.id,
-            'name': str(car.car_model),
-            'car_model_id': car.car_model.id,
+            'name': str(cm),
+            'car_model_id': cm.id,
+            'body_type_id': cm.body_type_id,
+            'tint_coefficient': float(cm.tint_coefficient.coefficient) if cm.tint_coefficient else 1.0,
+            'armor_coefficient': float(cm.armor_coefficient.coefficient) if cm.armor_coefficient else 1.0,
+            'body_coefficient': float(cm.body_type.coefficient) if cm.body_type else 1.0,
         })
 
     context = {
         'form': form,
-        'films_json': json.dumps(films_json),
-        'tint_services_json': json.dumps(tint_services_json),
-        'packages_json': json.dumps(packages_json),
-        'elements_json': json.dumps(elements_json),
-        'cars_json': json.dumps(cars_data),
+        'films_json': json.dumps(films_json, ensure_ascii=False),
+        'tint_services_json': json.dumps(tint_services_json, ensure_ascii=False),
+        'packages_json': json.dumps(packages_json, ensure_ascii=False),
+        'cars_json': json.dumps(cars_data, ensure_ascii=False),
         'user_discount': request.user.discount_percent,
     }
     return render(request, 'bookings/create.html', context)
@@ -98,6 +121,9 @@ def get_available_slots(request):
     except ValueError:
         return JsonResponse({'error': 'Неверный формат даты'}, status=400)
 
+    if date < timezone.now().date():
+        return JsonResponse({'error': 'Нельзя выбрать прошедшую дату', 'slots': []})
+
     booked = Booking.objects.filter(booking_date=date).exclude(status='cancelled').values_list('booking_time', flat=True)
     booked_times = [t.strftime('%H:%M') for t in booked]
 
@@ -112,39 +138,37 @@ def get_available_slots(request):
 
 def _calculate_price(booking):
     """
-    Рассчитывает базовую цену услуги.
-    Для тонировки: база_услуги × коэф_модели × коэф_кузова.
-    Для бронирования: база_пакета × коэф_модели × коэф_кузова.
-    """
-    from services.models import CarModel
+    Предварительная цена (без снятия старой плёнки):
+      Тонировка:    base_price(TintService) × коэф_модели × коэф_кузова × коэф_плёнки
+      Бронирование: base_price(ArmorPackage) × коэф_модели × коэф_кузова
 
+    ⚠️ Снятие старой плёнки в расчёт НЕ входит — цена и гарантия обсуждаются
+       индивидуально по телефону или при встрече.
+    """
     car = booking.car
     if not car:
         return 0
-
     car_model = car.car_model
     if not car_model:
         return 0
 
-    model_coefficient = 1.00
-    body_coefficient = 1.00
-
     if booking.service_type == 'tint':
-        # Тонировка: используем tint_coefficient
-        if car_model.tint_coefficient:
-            model_coefficient = float(car_model.tint_coefficient.coefficient)
-        if car_model.body_type:
-            body_coefficient = float(car_model.body_type.coefficient)
-        # Базовая цена из новой таблицы TintService
-        # Так как в Booking нет поля tint_service, берём из film_percent (временно)
-        # ВАЖНО: эта функция требует доработки формы
-        return 0
-    elif booking.service_type == 'armor':
-        if car_model.armor_coefficient:
-            model_coefficient = float(car_model.armor_coefficient.coefficient)
-        if car_model.body_type:
-            body_coefficient = float(car_model.body_type.coefficient)
-        if booking.armor_package:
-            return booking.armor_package.base_price * model_coefficient * body_coefficient
+        if not booking.tint_service:
+            return 0
+        model_coefficient = float(car_model.tint_coefficient.coefficient) if car_model.tint_coefficient else 1.0
+        body_coefficient = float(car_model.body_type.coefficient) if car_model.body_type else 1.0
+        film_coefficient = 1.0
+        if booking.tint_film_percent and booking.tint_film_percent.film:
+            film_coefficient = float(booking.tint_film_percent.film.coefficient)
+
+        return float(booking.tint_service.base_price) * model_coefficient * body_coefficient * film_coefficient
+
+    if booking.service_type == 'armor':
+        if not booking.armor_package:
+            return 0
+        model_coefficient = float(car_model.armor_coefficient.coefficient) if car_model.armor_coefficient else 1.0
+        body_coefficient = float(car_model.body_type.coefficient) if car_model.body_type else 1.0
+        return float(booking.armor_package.base_price) * model_coefficient * body_coefficient
 
     return 0
+

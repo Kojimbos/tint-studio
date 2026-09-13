@@ -50,9 +50,14 @@ class UserCar(models.Model):
         return f'{self.car_model} ({self.user})'
 
     @property
-    def car_class(self):
-        return self.car_model.car_class
-
-    @property
     def body_type(self):
         return self.car_model.body_type
+
+    @property
+    def tint_coefficient(self):
+        return self.car_model.tint_coefficient
+
+    @property
+    def armor_coefficient(self):
+        return self.car_model.armor_coefficient
+
